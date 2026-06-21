@@ -75,7 +75,7 @@ elif Cfg.mosaic:
 Cfg.checkpoints = os.path.join(_BASE_DIR, 'checkpoints')
 Cfg.TRAIN_TENSORBOARD_DIR = os.path.join(_BASE_DIR, 'log')
 
-Cfg.iou_type = 'ciou'  # 'iou', 'giou', 'diou', 'ciou'
+Cfg.iou_type = 'ciou'
 Cfg.iou_loss_weight = 0.5
 
 Cfg.keep_checkpoint_max = 10

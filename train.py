@@ -37,6 +37,7 @@ from tool.utils_iou import (
     get_adjusted_iou_threshold,
     bboxes_iou,
     bboxes_iou_loss,
+    bboxes_iou_loss_paired,
 )
 
 from tool.tv_reference.utils import collate_fn as val_collate
@@ -194,7 +195,7 @@ class Yolo_loss(nn.Module):
             loss_l2 += F.mse_loss(input=output, target=target, reduction='sum')
 
             # iou loss term (only on positive anchor-cell pairs)
-            mask_pos = tgt_mask[..., 0] > 0  # [B, 3, H, W]
+            mask_pos = tgt_mask[..., 0] > 0
             if mask_pos.any():
                 gt_decoded = target[..., :4].clone()
                 gt_decoded[..., 0] = target[..., 0] + self.grid_x[output_id]
@@ -205,10 +206,9 @@ class Yolo_loss(nn.Module):
                 pred_expanded = pred[mask_pos.unsqueeze(-1).expand_as(pred)].view(-1, 4)
                 gt_expanded = gt_decoded[mask_pos.unsqueeze(-1).expand_as(gt_decoded)].view(-1, 4)
 
-                iou_mat = bboxes_iou(pred_expanded, gt_expanded,
-                                     fmt='yolo', iou_type=self.iou_type)
-                iou_diag = torch.diag(iou_mat)
-                loss_iou += ((1.0 - iou_diag) * self.iou_loss_weight).sum()
+                iou_loss_vec = bboxes_iou_loss_paired(
+                    pred_expanded, gt_expanded, fmt='yolo', iou_type=self.iou_type)
+                loss_iou += (iou_loss_vec * self.iou_loss_weight).sum()
 
         loss = loss_xy + loss_wh + loss_obj + loss_cls + loss_iou
 

@@ -33,7 +33,8 @@ def bboxes_iou_test(bboxes_a, bboxes_b, fmt='voc', iou_type='iou'):
             cv2 = None
             from PIL import Image, ImageDraw
     
-    assert iou_type.lower() in ['iou', 'giou', 'diou', 'ciou']
+    from tool.utils_iou import IOU_VALID_TYPES
+    assert iou_type.lower() in IOU_VALID_TYPES
 
     if isinstance(bboxes_a, np.ndarray):
         bboxes_a = torch.Tensor(bboxes_a)

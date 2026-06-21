@@ -22,20 +22,12 @@ def softmax(x):
     return x
 
 
-def _validate_iou_type_np(iou_type):
-    if iou_type is None:
-        return 'iou'
-    if not isinstance(iou_type, str):
-        return 'iou'
-    normalized = iou_type.lower()
-    if normalized not in ('iou', 'giou', 'diou', 'ciou'):
-        return 'iou'
-    return normalized
+from tool.utils_iou import validate_iou_type
 
 
 def bbox_iou(box1, box2, x1y1x2y2=True, iou_type='iou'):
 
-    iou_type = _validate_iou_type_np(iou_type)
+    iou_type = validate_iou_type(iou_type)
 
     if x1y1x2y2:
         mx = min(box1[0], box2[0])
@@ -114,7 +106,7 @@ def bbox_iou(box1, box2, x1y1x2y2=True, iou_type='iou'):
 
 def bboxes_iou_np(boxes_a, boxes_b, xyxy=True, iou_type='iou'):
 
-    iou_type = _validate_iou_type_np(iou_type)
+    iou_type = validate_iou_type(iou_type)
 
     if xyxy:
         x1_a, y1_a, x2_a, y2_a = boxes_a[:, 0], boxes_a[:, 1], boxes_a[:, 2], boxes_a[:, 3]
@@ -190,7 +182,7 @@ def bboxes_iou_np(boxes_a, boxes_b, xyxy=True, iou_type='iou'):
 
 def nms_cpu(boxes, confs, nms_thresh=0.5, min_mode=False, iou_type='iou'):
 
-    iou_type = _validate_iou_type_np(iou_type)
+    iou_type = validate_iou_type(iou_type)
 
     x1 = boxes[:, 0]
     y1 = boxes[:, 1]
