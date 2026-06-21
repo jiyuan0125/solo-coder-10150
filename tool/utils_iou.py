@@ -18,6 +18,7 @@ __all__ = [
     "get_adjusted_iou_threshold",
     "bboxes_iou",
     "bboxes_iou_loss",
+    "bboxes_iou_loss_paired",
     "bboxes_giou",
     "bboxes_diou",
     "bboxes_ciou",
@@ -52,6 +53,12 @@ def bboxes_iou_loss(bboxes_a, bboxes_b, fmt='voc', iou_type='iou'):
     normalized = validate_iou_type(iou_type)
     iou_val = bboxes_iou(bboxes_a, bboxes_b, fmt, normalized)
     return 1.0 - iou_val
+
+
+def bboxes_iou_loss_paired(bboxes_a, bboxes_b, fmt='voc', iou_type='iou'):
+    normalized = validate_iou_type(iou_type)
+    iou_mat = bboxes_iou(bboxes_a, bboxes_b, fmt, normalized)
+    return 1.0 - torch.diag(iou_mat)
 
 
 if version.parse(torch.__version__) >= version.parse('1.5.0'):
@@ -219,8 +226,9 @@ def bboxes_iou(bboxes_a, bboxes_b, fmt='voc', iou_type='iou'):
     """
     v = F.cosine_similarity(bb_a[:,np.newaxis,:], bb_b, dim=-1)
     v = (_true_divide(2*torch.acos(v), np.pi)).pow(2)
+    alpha_gate = torch.sigmoid(200.0 * (iou - 0.5))
     with torch.no_grad():
-        alpha = (_true_divide(v, 1-iou+v)) * ((iou>=0.5).type(iou.type()))
+        alpha = (_true_divide(v, 1-iou+v)) * alpha_gate
 
     ciou = diou - alpha * v
 
