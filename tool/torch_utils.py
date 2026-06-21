@@ -8,30 +8,48 @@ from torch.autograd import Variable
 
 import itertools
 import struct  # get_image_size
-import imghdr  # get_image_size
+try:
+    import imghdr  # get_image_size
+except ModuleNotFoundError:
+    imghdr = None  # removed in Python 3.13+
 
-from tool import utils 
+from tool import utils
+from tool.utils_iou import validate_iou_type
 
 
-def bbox_ious(boxes1, boxes2, x1y1x2y2=True):
+def bbox_ious(boxes1, boxes2, x1y1x2y2=True, iou_type='iou'):
+    iou_type = validate_iou_type(iou_type)
     if x1y1x2y2:
-        mx = torch.min(boxes1[0], boxes2[0])
-        Mx = torch.max(boxes1[2], boxes2[2])
-        my = torch.min(boxes1[1], boxes2[1])
-        My = torch.max(boxes1[3], boxes2[3])
-        w1 = boxes1[2] - boxes1[0]
-        h1 = boxes1[3] - boxes1[1]
-        w2 = boxes2[2] - boxes2[0]
-        h2 = boxes2[3] - boxes2[1]
+        x1, y1, x2, y2 = boxes1[0], boxes1[1], boxes1[2], boxes1[3]
+        x1b, y1b, x2b, y2b = boxes2[0], boxes2[1], boxes2[2], boxes2[3]
+        w1 = x2 - x1
+        h1 = y2 - y1
+        w2 = x2b - x1b
+        h2 = y2b - y1b
+        cx1 = (x1 + x2) / 2.0
+        cy1 = (y1 + y2) / 2.0
+        cx2 = (x1b + x2b) / 2.0
+        cy2 = (y1b + y2b) / 2.0
+        mx = torch.min(x1, x1b)
+        Mx = torch.max(x2, x2b)
+        my = torch.min(y1, y1b)
+        My = torch.max(y2, y2b)
     else:
-        mx = torch.min(boxes1[0] - boxes1[2] / 2.0, boxes2[0] - boxes2[2] / 2.0)
-        Mx = torch.max(boxes1[0] + boxes1[2] / 2.0, boxes2[0] + boxes2[2] / 2.0)
-        my = torch.min(boxes1[1] - boxes1[3] / 2.0, boxes2[1] - boxes2[3] / 2.0)
-        My = torch.max(boxes1[1] + boxes1[3] / 2.0, boxes2[1] + boxes2[3] / 2.0)
-        w1 = boxes1[2]
-        h1 = boxes1[3]
-        w2 = boxes2[2]
-        h2 = boxes2[3]
+        cx1, cy1, w1, h1 = boxes1[0], boxes1[1], boxes1[2], boxes1[3]
+        cx2, cy2, w2, h2 = boxes2[0], boxes2[1], boxes2[2], boxes2[3]
+        x1 = cx1 - w1 / 2.0
+        y1 = cy1 - h1 / 2.0
+        x2 = cx1 + w1 / 2.0
+        y2 = cy1 + h1 / 2.0
+        x1b = cx2 - w2 / 2.0
+        y1b = cy2 - h2 / 2.0
+        x2b = cx2 + w2 / 2.0
+        y2b = cy2 + h2 / 2.0
+        mx = torch.min(x1, x1b)
+        Mx = torch.max(x2, x2b)
+        my = torch.min(y1, y1b)
+        My = torch.max(y2, y2b)
+
     uw = Mx - mx
     uh = My - my
     cw = w1 + w2 - uw
@@ -42,7 +60,34 @@ def bbox_ious(boxes1, boxes2, x1y1x2y2=True):
     carea = cw * ch
     carea[mask] = 0
     uarea = area1 + area2 - carea
-    return carea / uarea
+    iou = carea / uarea.clamp(min=1e-16)
+
+    if iou_type == 'iou':
+        return iou
+
+    c_area = uw * uh + 1e-16
+
+    if iou_type == 'giou':
+        giou = iou - (c_area - uarea) / c_area
+        return giou
+
+    centre_dist2 = (cx1 - cx2) ** 2 + (cy1 - cy2) ** 2
+    diag_len2 = uw ** 2 + uh ** 2 + 1e-16
+    diou = iou - centre_dist2 / diag_len2
+
+    if iou_type == 'diou':
+        return diou
+
+    if iou_type == 'ciou':
+        v = (4.0 / (math.pi ** 2)) * (torch.atan(w1 / (h1 + 1e-16)) - torch.atan(w2 / (h2 + 1e-16))) ** 2
+        with torch.no_grad():
+            denom = 1.0 - iou + v + 1e-16
+            alpha_raw = v / denom
+            alpha = torch.where(iou >= 0.5, alpha_raw, torch.zeros_like(alpha_raw))
+        ciou = diou - alpha * v
+        return ciou
+
+    return iou
 
 
 def get_region_boxes(boxes_and_confs):
@@ -73,7 +118,7 @@ def convert2cpu_long(gpu_matrix):
 
 
 
-def do_detect(model, img, conf_thresh, nms_thresh, use_cuda=1):
+def do_detect(model, img, conf_thresh, nms_thresh, use_cuda=1, iou_type='iou'):
     model.eval()
     with torch.no_grad():
         t0 = time.time()
@@ -101,5 +146,5 @@ def do_detect(model, img, conf_thresh, nms_thresh, use_cuda=1):
         print('      Model Inference : %f' % (t2 - t1))
         print('-----------------------------------')
 
-        return utils.post_processing(img, conf_thresh, nms_thresh, output)
+        return utils.post_processing(img, conf_thresh, nms_thresh, output, iou_type=iou_type)
 

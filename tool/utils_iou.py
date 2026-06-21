@@ -10,12 +10,48 @@ import numpy as np
 from packaging import version
 
 
+IOU_VALID_TYPES = ['iou', 'giou', 'diou', 'ciou']
+
 __all__ = [
+    "IOU_VALID_TYPES",
+    "validate_iou_type",
+    "get_adjusted_iou_threshold",
     "bboxes_iou",
+    "bboxes_iou_loss",
     "bboxes_giou",
     "bboxes_diou",
     "bboxes_ciou",
 ]
+
+
+def validate_iou_type(iou_type):
+    if iou_type is None:
+        return 'iou'
+    if not isinstance(iou_type, str):
+        return 'iou'
+    normalized = iou_type.lower()
+    if normalized not in IOU_VALID_TYPES:
+        return 'iou'
+    return normalized
+
+
+def get_adjusted_iou_threshold(base_threshold, iou_type):
+    normalized = validate_iou_type(iou_type)
+    if normalized == 'iou':
+        return base_threshold
+    elif normalized == 'giou':
+        return max(base_threshold - 0.20, -1.0)
+    elif normalized == 'diou':
+        return max(base_threshold - 0.25, -1.0)
+    elif normalized == 'ciou':
+        return max(base_threshold - 0.30, -1.0)
+    return base_threshold
+
+
+def bboxes_iou_loss(bboxes_a, bboxes_b, fmt='voc', iou_type='iou'):
+    normalized = validate_iou_type(iou_type)
+    iou_val = bboxes_iou(bboxes_a, bboxes_b, fmt, normalized)
+    return 1.0 - iou_val
 
 
 if version.parse(torch.__version__) >= version.parse('1.5.0'):

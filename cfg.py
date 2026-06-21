@@ -13,6 +13,8 @@
 import os
 from easydict import EasyDict
 
+from tool.utils_iou import validate_iou_type, IOU_VALID_TYPES
+
 
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -73,6 +75,17 @@ elif Cfg.mosaic:
 Cfg.checkpoints = os.path.join(_BASE_DIR, 'checkpoints')
 Cfg.TRAIN_TENSORBOARD_DIR = os.path.join(_BASE_DIR, 'log')
 
-Cfg.iou_type = 'iou'  # 'giou', 'diou', 'ciou'
+Cfg.iou_type = 'ciou'  # 'iou', 'giou', 'diou', 'ciou'
+Cfg.iou_loss_weight = 0.5
 
 Cfg.keep_checkpoint_max = 10
+
+
+def finalize_config(cfg_dict):
+    cfg_dict['iou_type'] = validate_iou_type(cfg_dict.get('iou_type'))
+    iou_loss_weight = cfg_dict.get('iou_loss_weight')
+    if iou_loss_weight is None or not isinstance(iou_loss_weight, (int, float)):
+        cfg_dict['iou_loss_weight'] = 0.5
+    else:
+        cfg_dict['iou_loss_weight'] = float(iou_loss_weight)
+    return cfg_dict

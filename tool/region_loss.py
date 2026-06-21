@@ -1,10 +1,15 @@
 import torch.nn as nn
 import torch.nn.functional as F
 from tool.torch_utils import *
+from tool.utils_iou import validate_iou_type, get_adjusted_iou_threshold
 
 
 def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW, noobject_scale, object_scale,
-                  sil_thresh, seen):
+                  sil_thresh, seen, iou_type='iou'):
+    iou_type = validate_iou_type(iou_type)
+    sil_thresh_adj = get_adjusted_iou_threshold(sil_thresh, iou_type)
+    iou_correct_thresh = get_adjusted_iou_threshold(0.5, iou_type)
+
     nB = target.size(0)
     nA = num_anchors
     nC = num_classes
@@ -32,8 +37,8 @@ def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW,
             gw = target[b][t * 5 + 3] * nW
             gh = target[b][t * 5 + 4] * nH
             cur_gt_boxes = torch.FloatTensor([gx, gy, gw, gh]).repeat(nAnchors, 1).t()
-            cur_ious = torch.max(cur_ious, bbox_ious(cur_pred_boxes, cur_gt_boxes, x1y1x2y2=False))
-        conf_mask[b][cur_ious > sil_thresh] = 0
+            cur_ious = torch.max(cur_ious, bbox_ious(cur_pred_boxes, cur_gt_boxes, x1y1x2y2=False, iou_type=iou_type))
+        conf_mask[b][cur_ious > sil_thresh_adj] = 0
     if seen < 12800:
         if anchor_step == 4:
             tx = torch.FloatTensor(anchors).view(nA, anchor_step).index_select(1, torch.LongTensor([2])).view(1, nA, 1,
@@ -69,7 +74,7 @@ def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW,
                 aw = anchors[anchor_step * n]
                 ah = anchors[anchor_step * n + 1]
                 anchor_box = [0, 0, aw, ah]
-                iou = bbox_iou(anchor_box, gt_box, x1y1x2y2=False)
+                iou = bbox_iou(anchor_box, gt_box, x1y1x2y2=False, iou_type=iou_type)
                 if anchor_step == 4:
                     ax = anchors[anchor_step * n + 2]
                     ay = anchors[anchor_step * n + 3]
@@ -92,17 +97,17 @@ def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW,
             ty[b][best_n][gj][gi] = target[b][t * 5 + 2] * nH - gj
             tw[b][best_n][gj][gi] = math.log(gw / anchors[anchor_step * best_n])
             th[b][best_n][gj][gi] = math.log(gh / anchors[anchor_step * best_n + 1])
-            iou = bbox_iou(gt_box, pred_box, x1y1x2y2=False)  # best_iou
+            iou = bbox_iou(gt_box, pred_box, x1y1x2y2=False, iou_type=iou_type)  # best_iou
             tconf[b][best_n][gj][gi] = iou
             tcls[b][best_n][gj][gi] = target[b][t * 5]
-            if iou > 0.5:
+            if iou > iou_correct_thresh:
                 nCorrect = nCorrect + 1
 
     return nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf, tcls
 
 
 class RegionLoss(nn.Module):
-    def __init__(self, num_classes=0, anchors=[], num_anchors=1):
+    def __init__(self, num_classes=0, anchors=[], num_anchors=1, iou_type='iou'):
         super(RegionLoss, self).__init__()
         self.num_classes = num_classes
         self.anchors = anchors
@@ -114,6 +119,7 @@ class RegionLoss(nn.Module):
         self.class_scale = 1
         self.thresh = 0.6
         self.seen = 0
+        self.iou_type = validate_iou_type(iou_type)
 
     def forward(self, output, target):
         # output : BxAs*(4+1+num_classes)*H*W
@@ -156,7 +162,8 @@ class RegionLoss(nn.Module):
                                                                                                     self.noobject_scale,
                                                                                                     self.object_scale,
                                                                                                     self.thresh,
-                                                                                                    self.seen)
+                                                                                                    self.seen,
+                                                                                                    self.iou_type)
         cls_mask = (cls_mask == 1)
         nProposals = int((conf > 0.25).sum().data[0])
 
